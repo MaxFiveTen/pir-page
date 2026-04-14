@@ -2,6 +2,10 @@ const SESSION_KEY_STORAGE = "five10-openrouter-key";
 const DEFAULT_MODEL = "openrouter/auto";
 const MAX_FILE_CHARS = 40000;
 const MAX_TOTAL_EVIDENCE_CHARS = 120000;
+const FALLBACK_DOCX_CDN = "https://cdn.jsdelivr.net/npm/docx@8.5.0/+esm";
+const FALLBACK_JSZIP_CDN = "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
+const APP_CONFIG = window.FIVE10_CONFIG || {};
+const API_BASE_URL = normalizeApiBaseUrl(APP_CONFIG.apiBaseUrl);
 
 const OUTPUT_LABELS = {
   pir: "Post Incident Report",
@@ -20,6 +24,9 @@ const keyStatus = document.querySelector("#key-status");
 const keyFileInput = document.querySelector("#key-file-input");
 const importKeyButton = document.querySelector("#import-key-button");
 const clearKeyButton = document.querySelector("#clear-key-button");
+const apiPanelNote = document.querySelector("#api-panel-note");
+const backendStatus = document.querySelector("#backend-status");
+const actionPanelNote = document.querySelector("#action-panel-note");
 const evidenceFilesInput = document.querySelector("#evidence-files");
 const evidenceSummary = document.querySelector("#evidence-summary");
 const fileList = document.querySelector("#file-list");
@@ -35,8 +42,11 @@ const exportDocxButton = document.querySelector("#export-docx-button");
 let loadedFiles = [];
 let latestAnalysis = null;
 let latestPayload = null;
+let docxLibraryPromise = null;
+let zipLibraryPromise = null;
 
 hydrateSessionKey();
+configureBackendMode();
 bindEvents();
 renderFileList();
 
@@ -52,6 +62,10 @@ function bindEvents() {
 }
 
 function hydrateSessionKey() {
+  if (API_BASE_URL) {
+    keyStatus.textContent = "Backend mode active.";
+    return;
+  }
   const stored = sessionStorage.getItem(SESSION_KEY_STORAGE);
   if (stored) {
     apiKeyInput.value = stored;
@@ -63,6 +77,9 @@ function hydrateSessionKey() {
 }
 
 function persistSessionKey() {
+  if (API_BASE_URL) {
+    return;
+  }
   const key = apiKeyInput.value.trim();
   if (!key) {
     sessionStorage.removeItem(SESSION_KEY_STORAGE);
@@ -74,9 +91,34 @@ function persistSessionKey() {
 }
 
 function clearSessionKey() {
+  if (API_BASE_URL) {
+    return;
+  }
   apiKeyInput.value = "";
   sessionStorage.removeItem(SESSION_KEY_STORAGE);
   keyStatus.textContent = "Session key cleared.";
+}
+
+function configureBackendMode() {
+  if (!API_BASE_URL) {
+    backendStatus.hidden = true;
+    return;
+  }
+
+  apiKeyInput.closest("label")?.classList.add("is-hidden");
+  importKeyButton.classList.add("is-hidden");
+  clearKeyButton.classList.add("is-hidden");
+  keyStatus.textContent = "Server-managed key mode.";
+  backendStatus.hidden = false;
+  backendStatus.textContent = `Backend API enabled: ${API_BASE_URL}/api/analyze`;
+
+  if (apiPanelNote) {
+    apiPanelNote.textContent = "This deployment is configured to call a backend API. OpenRouter credentials are expected to live on the server, not in the browser.";
+  }
+
+  if (actionPanelNote) {
+    actionPanelNote.textContent = "This page is configured for backend API mode. The browser will post case data to the server-side analysis endpoint instead of sending your key from the client.";
+  }
 }
 
 async function importKeyFile(event) {
@@ -171,7 +213,7 @@ async function handleAnalyze(event) {
   const model = modelInput.value.trim() || DEFAULT_MODEL;
   const selectedOutputs = getSelectedOutputs();
 
-  if (!key) {
+  if (!API_BASE_URL && !key) {
     setRunState("Error", "Load an OpenRouter key before running analysis.", true);
     return;
   }
@@ -282,6 +324,34 @@ function toggleActionState(isRunning) {
 }
 
 async function requestAnalysis({ key, model, payload }) {
+  if (API_BASE_URL) {
+    const response = await fetch(`${API_BASE_URL}/api/analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ model, payload }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Backend analysis request failed: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (!data?.analysis) {
+      throw new Error("Backend response did not include an analysis payload.");
+    }
+
+    const normalized = normalizeAnalysis(data.analysis);
+    normalized._meta = {
+      model: data.model || model,
+      generatedAt: data.generatedAt || new Date().toISOString(),
+      source: "backend",
+    };
+    return normalized;
+  }
+
   const systemPrompt = buildSystemPrompt();
   const userPrompt = buildUserPrompt(payload);
 
@@ -530,6 +600,8 @@ function renderAnalysis(analysis, selectedOutputs, payload) {
     const card = buildResultCard(outputKey, analysis);
     resultsContainer.appendChild(card);
   }
+
+  resultsContainer.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderChips(analysis, payload) {
@@ -768,7 +840,7 @@ function downloadJson() {
   }
   const filename = `${slugify(latestPayload?.metadata?.caseTitle || "incident-analysis")}.json`;
   const blob = new Blob([JSON.stringify(latestAnalysis, null, 2)], { type: "application/json" });
-  saveAs(blob, filename);
+  downloadBlob(blob, filename);
 }
 
 async function exportSelectedDocs() {
@@ -786,7 +858,8 @@ async function exportSelectedDocs() {
   exportDocxButton.disabled = true;
 
   try {
-    const zip = new JSZip();
+    const ZipLibrary = await getZipLibrary();
+    const zip = new ZipLibrary();
     const docs = [];
 
     for (const outputKey of selectedOutputs) {
@@ -796,13 +869,13 @@ async function exportSelectedDocs() {
 
     if (docs.length === 1) {
       const { outputKey, blob } = docs[0];
-      saveAs(blob, `${slugify(latestPayload.metadata.caseTitle || "incident")}-${outputKey}.docx`);
+      downloadBlob(blob, `${slugify(latestPayload.metadata.caseTitle || "incident")}-${outputKey}.docx`);
     } else {
       docs.forEach(({ outputKey, blob }) => {
         zip.file(`${slugify(latestPayload.metadata.caseTitle || "incident")}-${outputKey}.docx`, blob);
       });
       const bundle = await zip.generateAsync({ type: "blob" });
-      saveAs(bundle, `${slugify(latestPayload.metadata.caseTitle || "incident")}-report-pack.zip`);
+      downloadBlob(bundle, `${slugify(latestPayload.metadata.caseTitle || "incident")}-report-pack.zip`);
     }
 
     setRunState("Ready", "DOCX export complete.");
@@ -815,7 +888,8 @@ async function exportSelectedDocs() {
 }
 
 async function buildDocx(outputKey, analysis, payload) {
-  const { Document, HeadingLevel, Packer, Paragraph, TextRun } = window.docx;
+  const docxLibrary = await getDocxLibrary();
+  const { Document, HeadingLevel, Packer, Paragraph, TextRun } = docxLibrary;
 
   const children = [];
   children.push(new Paragraph({
@@ -896,12 +970,12 @@ async function buildDocx(outputKey, analysis, payload) {
 }
 
 function appendDocHeading(children, text) {
-  const { HeadingLevel, Paragraph } = window.docx;
+  const { HeadingLevel, Paragraph } = getLoadedDocxLibrary();
   children.push(new Paragraph({ text, heading: HeadingLevel.HEADING_2 }));
 }
 
 function appendDocParagraph(children, text) {
-  const { Paragraph } = window.docx;
+  const { Paragraph } = getLoadedDocxLibrary();
   if (!text) {
     return;
   }
@@ -909,7 +983,7 @@ function appendDocParagraph(children, text) {
 }
 
 function appendDocBulletList(children, items, heading) {
-  const { Paragraph } = window.docx;
+  const { Paragraph } = getLoadedDocxLibrary();
   if (!items?.length) {
     return;
   }
@@ -923,7 +997,7 @@ function appendDocBulletList(children, items, heading) {
 }
 
 function appendDocTimeline(children, events, heading) {
-  const { Paragraph } = window.docx;
+  const { Paragraph } = getLoadedDocxLibrary();
   if (!events?.length) {
     return;
   }
@@ -940,4 +1014,55 @@ function slugify(value) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+}
+
+function normalizeApiBaseUrl(value) {
+  return (value || "").toString().trim().replace(/\/+$/, "");
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function getDocxLibrary() {
+  if (window.docx) {
+    return window.docx;
+  }
+  if (!docxLibraryPromise) {
+    docxLibraryPromise = import(FALLBACK_DOCX_CDN).then((module) => module.default || module);
+  }
+  const library = await docxLibraryPromise;
+  if (!window.docx) {
+    window.docx = library;
+  }
+  return library;
+}
+
+function getLoadedDocxLibrary() {
+  if (!window.docx) {
+    throw new Error("DOCX library is not loaded.");
+  }
+  return window.docx;
+}
+
+async function getZipLibrary() {
+  if (window.JSZip) {
+    return window.JSZip;
+  }
+  if (!zipLibraryPromise) {
+    zipLibraryPromise = import(FALLBACK_JSZIP_CDN).then((module) => module.default || module);
+  }
+  const library = await zipLibraryPromise;
+  if (!window.JSZip) {
+    window.JSZip = library;
+  }
+  return library;
 }

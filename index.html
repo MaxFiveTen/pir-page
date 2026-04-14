@@ -106,7 +106,7 @@
                 <h3>OpenRouter</h3>
                 <span class="panel-badge">runtime only</span>
               </div>
-              <p class="panel-note">The API key stays in this browser session. It is not embedded into the site.</p>
+              <p id="api-panel-note" class="panel-note">The API key stays in this browser session. It is not embedded into the site.</p>
               <div class="field-grid two-up">
                 <label class="field">
                   <span>API Key</span>
@@ -122,6 +122,7 @@
                 <button id="clear-key-button" class="button button-ghost" type="button">Clear Session Key</button>
                 <span id="key-status" class="quiet-status" aria-live="polite">No key loaded.</span>
               </div>
+              <div id="backend-status" class="backend-status" hidden></div>
               <input id="key-file-input" type="file" accept=".txt" hidden>
             </article>
 
@@ -231,7 +232,7 @@
                 <button id="download-json-button" class="button button-secondary" type="button" disabled>Download JSON</button>
                 <button id="export-docx-button" class="button button-secondary" type="button" disabled>Export Selected DOCX</button>
               </div>
-              <p class="panel-note">If you plan to publish this repo publicly, keep the key file local and untracked. This page is designed for browser-session secrets only.</p>
+              <p id="action-panel-note" class="panel-note">If you plan to publish this repo publicly, keep the key file local and untracked. This page is designed for browser-session secrets only.</p>
             </article>
           </form>
         </section>
@@ -291,9 +292,9 @@
     </section>
   </main>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js" integrity="sha512-vRo/Q+BQ0lY8hLq9XqP8L1sChR0wSg2MaqkOawxaggUY8ailqXFz3vGN9VOGBev5nYeD1yfknhk+aoCA8DmFug==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha512-xXDvecy0C0uIK4WMbe6PfUuixh4craEw0jMZEvUyM+zP4h6AsVzTdDEr1xgG+Z6kTpsuRWpu9X6lzNN2Y7r+5g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

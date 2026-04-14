@@ -324,6 +324,10 @@ main {
   font-size: 1.1rem;
 }
 
+.is-hidden {
+  display: none !important;
+}
+
 .workflow-card p {
   margin: 0;
   color: var(--muted);
@@ -332,7 +336,7 @@ main {
 
 .workbench-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
 }
@@ -342,11 +346,13 @@ main {
 .results-column {
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .form-panel,
 .results-panel {
   padding: 1.3rem;
+  min-width: 0;
 }
 
 .panel-head {
@@ -484,6 +490,18 @@ main {
   bottom: 1rem;
 }
 
+.backend-status {
+  margin-top: 0.9rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: 14px;
+  border: 1px solid rgba(121, 209, 195, 0.2);
+  background: rgba(121, 209, 195, 0.08);
+  color: var(--signal);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
 .status-panel {
   background:
     linear-gradient(135deg, rgba(217, 141, 49, 0.08), rgba(121, 209, 195, 0.07)),
@@ -521,6 +539,7 @@ main {
 .results-container {
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .result-card {
@@ -529,6 +548,8 @@ main {
   background: rgba(255, 255, 255, 0.03);
   padding: 1rem;
   animation: rise 260ms ease;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .result-card header {
@@ -542,6 +563,7 @@ main {
 .result-card h4 {
   margin: 0;
   font-size: 1rem;
+  min-width: 0;
 }
 
 .result-card p,
@@ -550,6 +572,16 @@ main {
 .result-card th {
   color: #dbe3d8;
   line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.result-card strong,
+.result-card h5,
+.timeline-event strong,
+.ioc-group strong {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .result-card ul {
@@ -582,6 +614,7 @@ main {
   border-radius: 14px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.02);
+  min-width: 0;
 }
 
 .timeline-event strong,
@@ -597,6 +630,9 @@ main {
   background: rgba(1, 5, 6, 0.76);
   border: 1px solid var(--line);
   overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   color: var(--signal);
   font-size: 0.78rem;
   line-height: 1.8;

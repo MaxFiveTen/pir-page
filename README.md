@@ -1,12 +1,12 @@
 # Five-10 PIR Lab
 
-Static GitHub Pages app for SOC and IR workflows. Analysts can paste problem statements, upload text-based evidence, import a local OpenRouter API key file, run analysis, and export selected report outputs as `.docx`.
+Static GitHub Pages app for SOC and IR workflows. Analysts can paste problem statements, upload text-based evidence, run analysis, and export selected report outputs as `.docx`.
 
 ## What It Does
 
 - Gives you a public-facing workbench with a stronger visual presentation than a plain form.
 - Accepts analyst notes, problem statements, pasted raw logs, and uploaded text-based evidence files.
-- Sends the case package to OpenRouter at runtime from the browser.
+- Sends the case package either to OpenRouter directly from the browser or to a separate backend API if `config.js` defines `apiBaseUrl`.
 - Produces structured incident outputs with emphasis on:
   - Post Incident Report (PIR)
   - Incident Summary
@@ -17,6 +17,16 @@ Static GitHub Pages app for SOC and IR workflows. Analysts can paste problem sta
   - Customer Update
 - Exports selected deliverables as `.docx` files in a single `.zip` bundle.
 
+## Backend Mode
+
+If you want the public site to stop handling the OpenRouter key in the browser, set `window.FIVE10_CONFIG.apiBaseUrl` in `config.js` to a deployed backend URL.
+
+The frontend will then post to:
+
+- `/api/analyze`
+
+When backend mode is enabled, the key-entry controls are hidden and the browser sends only the case payload.
+
 ## Security Constraint
 
 This is a GitHub Pages site. GitHub Pages is static hosting, so it cannot safely store a private OpenRouter API key.
@@ -25,6 +35,8 @@ Because of that, the site is built to:
 
 - import a local key file at runtime, or
 - let an analyst paste a key into the browser for the current session.
+
+If you deploy a separate backend, the public site can avoid browser-side key handling entirely.
 
 The key is stored in `sessionStorage`, not embedded into the site.
 
