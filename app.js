@@ -2,6 +2,8 @@ const SESSION_KEY_STORAGE = "five10-openrouter-key";
 const DEFAULT_MODEL = "openrouter/auto";
 const MAX_FILE_CHARS = 40000;
 const MAX_TOTAL_EVIDENCE_CHARS = 120000;
+const MAX_DERIVED_TIMELINE_EVENTS = 25;
+const MAX_DERIVED_LOG_LINES = 18;
 const FALLBACK_DOCX_CDN = "https://cdn.jsdelivr.net/npm/docx@8.5.0/+esm";
 const FALLBACK_JSZIP_CDN = "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 const APP_CONFIG = window.FIVE10_CONFIG || {};
@@ -303,7 +305,7 @@ function buildCasePayload(selectedOutputs) {
   const formData = new FormData(form);
   const combinedEvidence = buildEvidenceBundle();
 
-  return {
+  const payload = {
     metadata: {
       clientName: (formData.get("clientName") || "").toString().trim(),
       caseTitle: (formData.get("caseTitle") || "").toString().trim(),
@@ -325,6 +327,9 @@ function buildCasePayload(selectedOutputs) {
     })),
     evidenceBundle: combinedEvidence,
   };
+
+  payload.derivedEvidence = deriveEvidenceInsights(payload);
+  return payload;
 }
 
 function buildEvidenceBundle() {
@@ -349,6 +354,220 @@ function buildEvidenceBundle() {
   }
 
   return chunks.join("\n\n---\n\n");
+}
+
+function deriveEvidenceInsights(payload) {
+  const narrativeText = normalizeEvidenceText([
+    payload.problemStatement,
+    payload.analystSummary,
+  ].filter(Boolean).join("\n"));
+
+  const evidenceText = normalizeEvidenceText([
+    payload.pastedEvidence,
+    payload.evidenceBundle,
+  ].filter(Boolean).join("\n"));
+
+  const fullText = [narrativeText, evidenceText].filter(Boolean).join("\n");
+
+  const lines = evidenceText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const derivedTimeline = lines
+    .map((line) => deriveTimelineEventFromLine(line))
+    .filter(Boolean)
+    .sort((left, right) => left.timestamp_ms - right.timestamp_ms)
+    .slice(0, MAX_DERIVED_TIMELINE_EVENTS)
+    .map(({ timestamp_ms, ...event }) => event);
+
+  const suspiciousLogLines = lines
+    .filter((line) => isSuspiciousLogLine(line))
+    .slice(0, MAX_DERIVED_LOG_LINES);
+
+  const initialAccessCandidates = derivedTimeline
+    .filter((event) => isInitialAccessEvent(event))
+    .slice(0, 8);
+
+  const observables = {
+    ips: uniqueValues(extractMatches(fullText, /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, 40)),
+    users: uniqueValues([
+      ...extractKeyedValues(fullText, ["user", "account", "principal", "username", "mailbox", "sender", "recipient"], 40),
+      ...extractMatches(fullText, /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}\b/g, 40),
+    ]),
+    email_addresses: uniqueValues(extractMatches(fullText, /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}\b/g, 40)),
+    domains: uniqueValues(extractDomainCandidates(fullText).slice(0, 40)),
+    urls: uniqueValues(extractMatches(fullText, /https?:\/\/[^\s"')]+/g, 40)),
+    hashes: uniqueValues(extractMatches(fullText, /\b(?:[A-Fa-f0-9]{32}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})\b/g, 40)),
+    hosts: uniqueValues(extractKeyedValues(fullText, ["host", "hostname", "computer", "device", "workstation"], 40)),
+    artifacts: uniqueValues(extractArtifactCandidates(lines).slice(0, 40)),
+  };
+
+  return {
+    evidence_character_count: fullText.length,
+    evidence_line_count: lines.length,
+    earliest_observed_event: derivedTimeline[0] || null,
+    latest_observed_event: derivedTimeline[derivedTimeline.length - 1] || null,
+    initial_access_candidates: initialAccessCandidates,
+    suspicious_log_lines: suspiciousLogLines,
+    timeline_seed: derivedTimeline,
+    observables,
+  };
+}
+
+function deriveTimelineEventFromLine(line) {
+  const timestamp = extractTimestampInfo(line);
+  if (!timestamp) {
+    return null;
+  }
+
+  const trimmedLine = line.replace(timestamp.raw, "").trim().replace(/^[-:|\]]+/, "").trim();
+  const actor = extractKeyedValues(line, ["user", "account", "principal", "username", "sender", "recipient"], 1)[0] || "";
+  const ipAddress = extractMatches(line, /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, 1)[0] || "";
+
+  return {
+    timestamp: timestamp.iso,
+    timestamp_ms: timestamp.time,
+    phase: inferIncidentPhase(trimmedLine),
+    event: summarizeLogLine(trimmedLine),
+    details: trimmedLine,
+    source: extractSourceLabel(trimmedLine),
+    actor,
+    ip_address: ipAddress,
+  };
+}
+
+function extractTimestampInfo(line) {
+  const patterns = [
+    /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b/,
+    /\b\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/,
+    /\b\d{2}\/\d{2}\/\d{4}[ T]\d{2}:\d{2}:\d{2}\b/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = line.match(pattern);
+    if (!match) {
+      continue;
+    }
+
+    const raw = match[0];
+    const normalized = raw.includes("T") || raw.endsWith("Z") ? raw : raw.replace(" ", "T");
+    const time = Date.parse(normalized);
+    if (Number.isNaN(time)) {
+      continue;
+    }
+
+    return {
+      raw,
+      iso: new Date(time).toISOString(),
+      time,
+    };
+  }
+
+  return null;
+}
+
+function summarizeLogLine(line) {
+  const cleaned = line
+    .replace(/\s+/g, " ")
+    .replace(/\b(?:user|account|principal|username|ip|source_ip|sender|recipient|reason|subject|rule|destination)=/gi, "")
+    .trim();
+
+  return cleaned.length > 140 ? `${cleaned.slice(0, 137).trim()}...` : cleaned;
+}
+
+function extractSourceLabel(line) {
+  const tokens = line.split(/\s+/).filter(Boolean);
+  return tokens.slice(0, 2).join(" ");
+}
+
+function inferIncidentPhase(line) {
+  const value = line.toLowerCase();
+  if (/(sign-?in success|login success|authenticated|credential|phish|token|mfa not satisfied)/.test(value)) {
+    return "Initial Access";
+  }
+  if (/(rule created|forward|oauth|grant|device registration|persistence)/.test(value)) {
+    return "Persistence";
+  }
+  if (/(message read|recon|enumerat|search|mailitemsaccessed|download)/.test(value)) {
+    return "Reconnaissance";
+  }
+  if (/(message sent|wire|payment|exfil|upload|lateral|privilege|command|powershell)/.test(value)) {
+    return "Attack Execution";
+  }
+  if (/(alert|detect|blocked|conditional access|password reset|contain)/.test(value)) {
+    return "Detection / Containment";
+  }
+  return "Observed Activity";
+}
+
+function isInitialAccessEvent(event) {
+  const value = `${event.phase} ${event.event} ${event.details}`.toLowerCase();
+  return /(initial access|sign-?in success|login success|authenticated|credential|mfa not satisfied|oauth|token|phish)/.test(value);
+}
+
+function isSuspiciousLogLine(line) {
+  return /(sign-?in|login|mfa|rule|forward|oauth|device registration|grant|alert|wire|payment|impossible travel|mailitemsaccessed|message(sent|read)|powershell|blocked|conditional access|password reset)/i.test(line);
+}
+
+function extractMatches(text, pattern, limit = 25) {
+  const matches = text.match(pattern) || [];
+  return uniqueValues(matches).slice(0, limit);
+}
+
+function extractKeyedValues(text, keys, limit = 25) {
+  const values = [];
+  const expressions = keys.map((key) => new RegExp(`${key}=([^\\s,;]+)`, "gi"));
+  expressions.forEach((expression) => {
+    let match;
+    while ((match = expression.exec(text)) !== null && values.length < limit) {
+      values.push(match[1].replace(/^['"]|['"]$/g, ""));
+    }
+  });
+  return uniqueValues(values).slice(0, limit);
+}
+
+function extractDomainCandidates(text) {
+  const domains = [
+    ...extractMatches(text, /\b[a-zA-Z0-9._%+-]+@([a-zA-Z0-9.-]+\.[A-Za-z]{2,})\b/g, 80).map((entry) => entry.split("@").pop() || ""),
+    ...extractMatches(text, /\bdomain=([a-zA-Z0-9.-]+\.[A-Za-z]{2,})\b/g, 40).map((entry) => entry.split("=").pop() || ""),
+    ...extractMatches(text, /https?:\/\/([^\s/:]+)[^\s]*/g, 40).map((url) => {
+      try {
+        return new URL(url).hostname;
+      } catch {
+        return "";
+      }
+    }),
+  ];
+
+  return domains.filter((domain) => domain && !domain.includes("@"));
+}
+
+function normalizeEvidenceText(value) {
+  return String(value || "")
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t");
+}
+
+function extractArtifactCandidates(lines) {
+  const artifacts = [];
+  const keyedFields = ["rule", "subject", "destination", "title", "app", "folder"];
+
+  for (const line of lines) {
+    for (const field of keyedFields) {
+      const match = line.match(new RegExp(`${field}=([^\\n]+?)(?=\\s+[a-z_]+=|$)`, "i"));
+      if (match) {
+        artifacts.push(`${humanizeKey(field)}: ${match[1].trim().replace(/^['"]|['"]$/g, "")}`);
+      }
+    }
+  }
+
+  return uniqueValues(artifacts);
+}
+
+function uniqueValues(values) {
+  return Array.from(new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean)));
 }
 
 function getSelectedOutputs() {
@@ -391,7 +610,7 @@ async function requestAnalysis({ key, model, payload }) {
       throw new Error("Backend response did not include an analysis payload.");
     }
 
-    const normalized = normalizeAnalysis(data.analysis);
+    const normalized = augmentAnalysisWithEvidence(normalizeAnalysis(data.analysis), payload);
     normalized._meta = {
       model: data.model || model,
       generatedAt: data.generatedAt || new Date().toISOString(),
@@ -409,7 +628,7 @@ async function requestAnalysis({ key, model, payload }) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${key}`,
       "HTTP-Referer": window.location.href,
-      "X-Title": "Five-10 PIR Lab",
+      "X-Title": "Five-10 Incident Reporting",
     },
     body: JSON.stringify({
       model,
@@ -432,7 +651,7 @@ async function requestAnalysis({ key, model, payload }) {
     throw new Error("No message content returned from OpenRouter.");
   }
 
-  const parsed = normalizeAnalysis(parseJsonResponse(content));
+  const parsed = augmentAnalysisWithEvidence(normalizeAnalysis(parseJsonResponse(content)), payload);
   parsed._meta = {
     model,
     generatedAt: new Date().toISOString(),
@@ -468,6 +687,8 @@ function buildSystemPrompt() {
     "Every list must contain concise, useful items rather than filler.",
     "For uncertain claims, mark confidence as low or medium and explain why.",
     "If no IOCs are present, return empty arrays rather than inventing indicators.",
+    "Parse raw logs aggressively for IP addresses, email addresses, domains, URLs, hashes, accounts, hosts, rule names, message subjects, and earliest suspicious timestamps.",
+    "When timeline evidence exists, start from the earliest confirmed malicious or suspicious event, not just the detection point.",
     templateRequirements,
     "Use this JSON schema:",
     JSON.stringify(getResponseTemplate(), null, 2),
@@ -485,16 +706,20 @@ function buildUserPrompt(payload) {
       "Fill the full JSON structure.",
       "Prioritize the user's selected outputs but still populate the canonical schema.",
       "Derive an incident type if the user selected Auto-detect.",
-      "Provide a realistic timeline when evidence supports it.",
+      "Provide a realistic timeline when evidence supports it and anchor the reporting window to the earliest confirmed suspicious event in the logs.",
       "Recommend immediate containment and follow-up remediation steps.",
       "Follow the executive summary and PIR template style described in the system prompt.",
       "For the PIR, include phase-based narrative, evidence-backed findings, and table-friendly detail objects whenever the evidence supports them.",
       "Return string arrays for technical findings, evidence highlights, indicators, recommendations, lessons learned, open questions, remediation steps, and talking points. Use object arrays only for timeline, infrastructure, affected accounts/assets, fraud path, and risk register.",
+      "Use the derived evidence hints to populate IOC and timeline fields even when the narrative summary is sparse.",
+      "Promote concrete IPs, email addresses, domains, URLs, accounts, hosts, and artifacts seen in the logs into the IOC report and PIR sections.",
       "For the executive summary, make the short version understandable to non-technical leadership and make the urgent actions explicit.",
       "Use concise bullets and structured findings.",
     ].join("\n"),
     "INCIDENT-TYPE GUIDANCE",
     incidentGuidance,
+    "DERIVED EVIDENCE HINTS",
+    JSON.stringify(payload?.derivedEvidence || {}, null, 2),
   ].join("\n\n");
 }
 
@@ -787,6 +1012,212 @@ function normalizeAnalysis(raw) {
   if (!merged.report_metadata.report_title) {
     merged.report_metadata.report_title = merged.pir.title || "Incident Report";
   }
+
+  return merged;
+}
+
+function augmentAnalysisWithEvidence(analysis, payload) {
+  const derived = payload?.derivedEvidence;
+  if (!derived) {
+    return analysis;
+  }
+
+  const augmented = structuredClone(analysis);
+  const observables = derived.observables || {};
+  const derivedTimeline = normalizeTimeline(derived.timeline_seed);
+  const initialCandidates = normalizeTimeline(derived.initial_access_candidates);
+  const earliestObserved = derived.earliest_observed_event;
+  const latestObserved = derived.latest_observed_event;
+
+  for (const key of Object.keys(augmented.ioc_report)) {
+    augmented.ioc_report[key] = uniqueValues([
+      ...toList(augmented.ioc_report[key]),
+      ...toList(observables[key]),
+    ]);
+  }
+
+  augmented.pir.indicators_of_compromise = uniqueValues([
+    ...toList(augmented.pir.indicators_of_compromise),
+    ...flattenIocReport(augmented.ioc_report),
+  ]);
+
+  const combinedTimeline = dedupeTimelineEvents([
+    ...initialCandidates,
+    ...derivedTimeline,
+    ...normalizeTimeline(augmented.pir.timeline),
+    ...normalizeTimeline(augmented.timeline_report.events),
+  ]);
+
+  if (combinedTimeline.length) {
+    augmented.pir.timeline = combinedTimeline;
+    augmented.timeline_report.events = combinedTimeline;
+  }
+
+  if (!augmented.incident_profile.reporting_window && earliestObserved && latestObserved) {
+    augmented.incident_profile.reporting_window = `${earliestObserved.timestamp} - ${latestObserved.timestamp}`;
+  }
+
+  if (!augmented.pir.scope_and_exposure && observables.users?.length) {
+    augmented.pir.scope_and_exposure = `Observed accounts and identities: ${observables.users.join(", ")}.`;
+  }
+
+  const initialAccessText = initialCandidates[0]
+    ? summarizeDerivedEvent(initialCandidates[0])
+    : "";
+
+  if (initialAccessText) {
+    augmented.pir.summary_of_findings = prependUniqueSentence(
+      augmented.pir.summary_of_findings,
+      `Earliest suspicious activity observed: ${initialAccessText}.`,
+    );
+    augmented.incident_summary.what_happened = prependUniqueSentence(
+      augmented.incident_summary.what_happened,
+      `Earliest suspicious activity observed: ${initialAccessText}.`,
+    );
+  }
+
+  const derivedHighlights = toList(derived.suspicious_log_lines).map((line) => summarizeLogLine(line));
+  augmented.pir.evidence_highlights = uniqueValues([
+    ...toList(augmented.pir.evidence_highlights),
+    ...derivedHighlights,
+  ]);
+
+  augmented.pir.technical_findings = uniqueValues([
+    ...toList(augmented.pir.technical_findings),
+    ...buildObservableFindings(observables),
+  ]);
+
+  augmented.pir.attacker_infrastructure = mergeObjectList(
+    augmented.pir.attacker_infrastructure,
+    buildAttackerInfrastructure(observables),
+    ["ip_address", "notes"],
+  );
+
+  augmented.pir.affected_accounts = mergeObjectList(
+    augmented.pir.affected_accounts,
+    buildAffectedAccounts(observables),
+    ["identifier"],
+  );
+
+  augmented.pir.affected_assets = mergeObjectList(
+    augmented.pir.affected_assets,
+    buildAffectedAssets(augmented, observables),
+    ["asset"],
+  );
+
+  return augmented;
+}
+
+function dedupeTimelineEvents(events) {
+  return events
+    .filter((event) => event?.event)
+    .map((event) => ({
+      timestamp: toParagraph(event.timestamp),
+      phase: toParagraph(event.phase),
+      event: toParagraph(event.event),
+      details: toParagraph(event.details),
+      source: toParagraph(event.source),
+      actor: toParagraph(event.actor),
+      ip_address: toParagraph(event.ip_address),
+    }))
+    .filter((event, index, array) => {
+      const signature = JSON.stringify(event);
+      return array.findIndex((candidate) => JSON.stringify(candidate) === signature) === index;
+    })
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.timestamp || "") || Number.MAX_SAFE_INTEGER;
+      const rightTime = Date.parse(right.timestamp || "") || Number.MAX_SAFE_INTEGER;
+      return leftTime - rightTime;
+    });
+}
+
+function prependUniqueSentence(text, sentence) {
+  const base = toParagraph(text);
+  const addition = toParagraph(sentence);
+  if (!addition) {
+    return base;
+  }
+  if (!base) {
+    return addition;
+  }
+  return base.includes(addition) ? base : `${addition} ${base}`;
+}
+
+function summarizeDerivedEvent(event) {
+  if (!event) {
+    return "";
+  }
+
+  return [event.timestamp, event.event, event.actor, event.ip_address].filter(Boolean).join(" | ");
+}
+
+function buildObservableFindings(observables) {
+  const findings = [];
+  if (observables.ips?.length) {
+    findings.push(`Observed IP addresses in supplied evidence: ${observables.ips.join(", ")}.`);
+  }
+  if (observables.email_addresses?.length) {
+    findings.push(`Observed email addresses in supplied evidence: ${observables.email_addresses.join(", ")}.`);
+  }
+  if (observables.domains?.length) {
+    findings.push(`Observed domains in supplied evidence: ${observables.domains.join(", ")}.`);
+  }
+  if (observables.artifacts?.length) {
+    findings.push(`Observed log artifacts: ${observables.artifacts.slice(0, 6).join("; ")}.`);
+  }
+  return findings;
+}
+
+function buildAttackerInfrastructure(observables) {
+  return [
+    ...(observables.ips || []).map((ip) => ({ ip_address: ip, role: "Observed IP", notes: "Extracted from supplied evidence." })),
+    ...(observables.email_addresses || []).map((address) => ({ ip_address: address, role: "Observed Email", notes: "Extracted from supplied evidence." })),
+    ...(observables.domains || []).map((domain) => ({ ip_address: domain, role: "Observed Domain", notes: "Extracted from supplied evidence." })),
+  ];
+}
+
+function buildAffectedAccounts(observables) {
+  return (observables.users || []).map((user) => ({
+    identifier: user,
+    account_type: user.includes("@") ? "User / Mailbox" : "Account",
+    status: "Observed in evidence",
+  }));
+}
+
+function buildAffectedAssets(analysis, observables) {
+  const assets = [];
+  const knownAssets = uniqueValues([
+    ...toList(analysis.incident_summary.affected_assets),
+    ...(observables.hosts || []),
+  ]);
+
+  knownAssets.forEach((asset) => {
+    assets.push({
+      asset,
+      asset_type: asset.includes("@") ? "Mailbox / Identity" : "Observed Asset",
+      status: "Observed in evidence",
+    });
+  });
+
+  return assets;
+}
+
+function mergeObjectList(existing, incoming, identityKeys) {
+  const merged = [];
+  const seen = new Set();
+
+  [...(existing || []), ...(incoming || [])].forEach((item) => {
+    const normalized = {};
+    Object.entries(item || {}).forEach(([key, value]) => {
+      normalized[key] = toParagraph(value);
+    });
+
+    const signature = identityKeys.map((key) => normalized[key] || "").join("|") || JSON.stringify(normalized);
+    if (!seen.has(signature)) {
+      seen.add(signature);
+      merged.push(normalized);
+    }
+  });
 
   return merged;
 }

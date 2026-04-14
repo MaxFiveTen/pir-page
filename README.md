@@ -1,6 +1,6 @@
-# Five-10 PIR Lab
+# Five-10 Incident Reporting
 
-Static GitHub Pages app for SOC and IR workflows. Analysts can paste problem statements, upload text-based evidence, run analysis, and export selected report outputs as `.docx`.
+Static GitHub Pages app for incident reporting workflows. Analysts can paste problem statements, upload text-based evidence, run analysis, and export selected report outputs as `.docx`.
 
 ## What It Does
 

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Five-10 PIR Lab</title>
-  <meta name="description" content="A GitHub Pages incident workbench for SOC analysts that turns logs, analyst notes, and raw evidence into PIRs, summaries, and exportable DOCX reports.">
+  <title>Five-10 Incident Reporting</title>
+  <meta name="description" content="A browser-based incident reporting workspace for turning case evidence into post-incident reports, summaries, timelines, and exportable DOCX deliverables.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -16,8 +16,8 @@
     <a class="brand" href="#top">
       <span class="brand-mark">510</span>
       <span class="brand-copy">
-        <strong>Five-10 PIR Lab</strong>
-        <small>Public IR reporting workbench</small>
+        <strong>Five-10 Incident Reporting</strong>
+        <small>Security incident reporting workspace</small>
       </span>
     </a>
     <nav class="site-nav" aria-label="Primary">
@@ -30,39 +30,39 @@
   <main id="top">
     <section class="hero panel reveal">
       <div class="hero-copy">
-        <p class="eyebrow">Heimdall-style intake. Five-10 tone.</p>
-        <h1>Turn case notes, raw logs, and SOC summaries into usable incident documents.</h1>
+        <p class="eyebrow">Security Incident Reporting</p>
+        <h1>Turn case notes, raw logs, and analyst findings into usable incident documents.</h1>
         <p class="hero-text">
-          This workbench is built for incident response teams that need faster first-pass reporting.
-          Bring in evidence, force structure around the case, run analysis through OpenRouter, and export selected outputs as `.docx`.
+          Load case evidence, structure the incident record, review generated output, and export the documents you need.
+          The workspace is designed for fast first-pass reporting without forcing everything into a single report format.
         </p>
         <div class="hero-actions">
           <a class="button button-primary" href="#workbench">Open Workbench</a>
-          <a class="button button-secondary" href="#notes">Review Security Notes</a>
+          <a class="button button-secondary" href="#notes">Operational Notes</a>
         </div>
       </div>
       <div class="hero-stack">
         <div class="stack-card stack-card-terminal">
-          <div class="stack-label">Case Feed</div>
+          <div class="stack-label">Case Workflow</div>
           <code>
-            analyst@five-10:~$ ingest case.txt<br>
-            analyst@five-10:~$ attach logs.jsonl<br>
-            analyst@five-10:~$ summarize incident<br>
-            analyst@five-10:~$ export pir.docx
+            Load evidence files<br>
+            Review extracted observables<br>
+            Generate incident outputs<br>
+            Export selected documents
           </code>
         </div>
         <div class="stack-card stack-card-metrics">
           <div>
             <span class="metric-value">7</span>
-            <span class="metric-label">report types</span>
+            <span class="metric-label">document outputs</span>
           </div>
           <div>
             <span class="metric-value">1</span>
-            <span class="metric-label">runtime key import</span>
+            <span class="metric-label">session key</span>
           </div>
           <div>
-            <span class="metric-value">0</span>
-            <span class="metric-label">server-side secrets</span>
+            <span class="metric-value">6+</span>
+            <span class="metric-label">supported text formats</span>
           </div>
         </div>
       </div>
@@ -82,7 +82,7 @@
         <article class="panel workflow-card">
           <span class="step-index">02</span>
           <h3>Analyze</h3>
-          <p>OpenRouter receives a structured case packet and returns normalized incident sections with explicit confidence and action items.</p>
+          <p>The analysis engine reviews the case packet and returns normalized incident sections, timelines, indicators, and action items.</p>
         </article>
         <article class="panel workflow-card">
           <span class="step-index">03</span>
@@ -103,10 +103,10 @@
           <form id="analysis-form" class="form-shell" novalidate>
             <article class="panel form-panel">
               <div class="panel-head">
-                <h3>OpenRouter</h3>
-                <span class="panel-badge">runtime only</span>
+                <h3>Analysis Settings</h3>
+                <span class="panel-badge">session key</span>
               </div>
-              <p id="api-panel-note" class="panel-note">The API key stays in this browser session. It is not embedded into the site.</p>
+              <p id="api-panel-note" class="panel-note">Provide your analysis key for the current session. It remains in this browser session and is not embedded into the page.</p>
               <div class="field-grid two-up">
                 <label class="field">
                   <span>API Key</span>
@@ -129,7 +129,7 @@
             <article class="panel form-panel">
               <div class="panel-head">
                 <h3>Case Metadata</h3>
-                <span class="panel-badge">normalized</span>
+                <span class="panel-badge">structured</span>
               </div>
               <div class="field-grid two-up">
                 <label class="field">
@@ -180,7 +180,7 @@
             <article class="panel form-panel">
               <div class="panel-head">
                 <h3>Narrative Inputs</h3>
-                <span class="panel-badge">required</span>
+                <span class="panel-badge">case context</span>
               </div>
               <label class="field">
                 <span>Problem Statement</span>
@@ -199,7 +199,7 @@
             <article class="panel form-panel">
               <div class="panel-head">
                 <h3>Evidence Files</h3>
-                <span class="panel-badge">text-based</span>
+                <span class="panel-badge">supported formats</span>
               </div>
               <label class="upload-zone" for="evidence-files">
                 <span>Drop or select evidence files</span>
@@ -213,7 +213,7 @@
             <article class="panel form-panel">
               <div class="panel-head">
                 <h3>Output Pack</h3>
-                <span class="panel-badge">.docx ready</span>
+                <span class="panel-badge">export ready</span>
               </div>
               <div class="checkbox-grid">
                 <label class="checkbox-card"><input type="checkbox" name="outputs" value="pir" checked><span>Post Incident Report</span></label>
@@ -232,7 +232,7 @@
                 <button id="download-json-button" class="button button-secondary" type="button" disabled>Download JSON</button>
                 <button id="export-docx-button" class="button button-secondary" type="button" disabled>Export Selected DOCX</button>
               </div>
-              <p id="action-panel-note" class="panel-note">If you plan to publish this repo publicly, keep the key file local and untracked. This page is designed for browser-session secrets only.</p>
+              <p id="action-panel-note" class="panel-note">If this site stays public, keep your key file local and untracked.</p>
             </article>
           </form>
         </section>
@@ -250,7 +250,7 @@
           <article class="panel results-panel">
             <div class="panel-head">
               <h3>Structured Output</h3>
-              <span class="panel-badge">rendered</span>
+              <span class="panel-badge">analysis</span>
             </div>
             <div id="results-empty" class="empty-state">
               <p>No analysis has been run yet.</p>
@@ -272,21 +272,21 @@
 
     <section id="notes" class="notes reveal">
       <div class="section-heading">
-        <p class="eyebrow">Security Notes</p>
-        <h2>Important operational constraints</h2>
+        <p class="eyebrow">Operational Notes</p>
+        <h2>Implementation notes and handling guidance</h2>
       </div>
       <div class="workflow-grid">
         <article class="panel workflow-card note-card">
           <h3>Key handling</h3>
-          <p>GitHub Pages cannot safely hide a private OpenRouter key. This build uses analyst-supplied runtime credentials and stores them only for the current browser session.</p>
+          <p>This site uses a user-supplied session key. If the page remains public, keep that key local and avoid committing it to the repository.</p>
         </article>
         <article class="panel workflow-card note-card">
           <h3>Evidence format</h3>
-          <p>This version reads text evidence directly in the browser. Binary forensic artifacts still need preprocessing or a backend parser if you want deep automation later.</p>
+          <p>This version reads text evidence directly in the browser. Binary artifacts still need preprocessing or a separate parsing workflow.</p>
         </article>
         <article class="panel workflow-card note-card">
-          <h3>PIR meaning</h3>
-          <p>This app treats PIR as a Post Incident Report. If your internal PIR format means something else, the prompt schema can be adjusted without changing the export pipeline.</p>
+          <h3>Report naming</h3>
+          <p>Within this workspace, PIR refers to a Post Incident Report. The output structure can be adjusted later without changing the export flow.</p>
         </article>
       </div>
     </section>
@@ -294,7 +294,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="config.js?v=20260414"></script>
+  <script src="app.js?v=20260414"></script>
 </body>
 </html>
