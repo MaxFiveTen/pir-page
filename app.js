@@ -17,6 +17,54 @@ const OUTPUT_LABELS = {
   customer_update: "Customer Update",
 };
 
+const INCIDENT_TEMPLATE_GUIDANCE = {
+  generic: [
+    "State clearly what happened, why it matters, what is confirmed, and what remains unknown.",
+    "Use concrete timestamps, actors, assets, systems, and business consequences wherever evidence allows.",
+    "Separate confirmed facts from assessment. Avoid vague filler and generic security boilerplate.",
+    "When evidence supports it, structure the PIR as phases of the incident lifecycle rather than a flat bullet dump.",
+  ],
+  phishing_bec: [
+    "Emphasize impersonation path, targeted recipients, fraudulent messages sent, attachment sizes, banking or payment risk, and any internal recipients who may have acted.",
+    "Call out dwell time, mailbox reconnaissance, OAuth abuse, fake account creation, forwarding rules, and business process abuse.",
+  ],
+  malware_ransomware: [
+    "Focus on initial access, execution, persistence, privilege escalation, lateral movement, encryption or destructive actions, and recovery blockers.",
+    "Highlight impacted hosts, containment boundaries, encryption scope, backups, and restoration status.",
+  ],
+  identity_account_compromise: [
+    "Focus on login events, MFA challenges, impossible travel, session hijacking, OAuth grants, device registrations, admin actions, and privilege abuse.",
+    "Document account takeover sequence, persistence mechanisms, and downstream actions taken from the compromised identity.",
+  ],
+  endpoint_compromise: [
+    "Focus on host timeline, process execution, persistence, tools dropped, affected user accounts, and containment verification.",
+  ],
+  network_intrusion: [
+    "Focus on ingress, lateral movement, firewall or VPN activity, pivot points, affected subnets, exposed services, and infrastructure touched.",
+  ],
+  cloud_saas_incident: [
+    "Focus on tenant-level actions, admin console activity, application grants, API abuse, external sharing, mailbox or file access, and identity propagation.",
+  ],
+  data_exfiltration: [
+    "Focus on data accessed, data staged, transfer mechanism, likely recipients, sensitivity, volume, and legal or notification implications.",
+  ],
+  insider_threat: [
+    "Focus on user intent indicators, unusual access patterns, policy deviation, privileged actions, data handling, and decision or HR touchpoints.",
+  ],
+  third_party_vendor_incident: [
+    "Focus on trust relationships, vendor access scope, downstream exposure, notification dependencies, and compensating controls.",
+  ],
+  vulnerability_exploitation: [
+    "Focus on exploited weakness, attack path, patch status, exposed systems, exploit evidence, and residual risk if remediation is incomplete.",
+  ],
+  operational_service_disruption: [
+    "Focus on outage timeline, affected business functions, root cause indicators, restoration milestones, and open service risks.",
+  ],
+  compliance_policy_event: [
+    "Focus on policy deviation, evidence trail, systems or records involved, scope, materiality, and required follow-up actions.",
+  ],
+};
+
 const form = document.querySelector("#analysis-form");
 const apiKeyInput = document.querySelector("#api-key");
 const modelInput = document.querySelector("#model");
@@ -394,6 +442,22 @@ async function requestAnalysis({ key, model, payload }) {
 }
 
 function buildSystemPrompt() {
+  const templateRequirements = [
+    "EXECUTIVE SUMMARY TEMPLATE:",
+    "- Open with a concise title block and a leadership-friendly short version of the incident.",
+    "- Include what happened, why it matters, immediate actions required today, and a bottom-line statement.",
+    "- Keep wording plain enough for business stakeholders while preserving technical accuracy.",
+    "POST INCIDENT REPORT TEMPLATE:",
+    "- Use numbered major sections and a structured, review-ready report tone.",
+    "- Prefer a phased incident narrative where evidence supports phases such as initial compromise, persistence, attack execution, containment, and recovery.",
+    "- Include tables or table-friendly data structures for timeline, attacker infrastructure, affected accounts/assets, and risk tracking whenever evidence exists.",
+    "- Include explicit risk status, urgent actions, unresolved questions, and evidence-backed conclusions.",
+    "ALL OUTPUTS:",
+    "- Do not invent evidence, indicators, targets, or business impact.",
+    "- If evidence is partial, say what is confirmed, what is assessed, and what remains unknown.",
+    "- Use strong, declarative writing and avoid generic filler such as 'continue monitoring' unless tied to a concrete risk.",
+  ].join("\n");
+
   return [
     "You are a senior incident response report writer producing structured deliverables for SOC analysts.",
     "Use only the evidence supplied by the user. If evidence is incomplete, say so explicitly.",
@@ -404,12 +468,15 @@ function buildSystemPrompt() {
     "Every list must contain concise, useful items rather than filler.",
     "For uncertain claims, mark confidence as low or medium and explain why.",
     "If no IOCs are present, return empty arrays rather than inventing indicators.",
+    templateRequirements,
     "Use this JSON schema:",
     JSON.stringify(getResponseTemplate(), null, 2),
   ].join("\n\n");
 }
 
 function buildUserPrompt(payload) {
+  const incidentGuidance = getIncidentSpecificGuidance(payload?.metadata?.incidentType);
+
   return [
     "CASE PAYLOAD",
     JSON.stringify(payload, null, 2),
@@ -420,40 +487,78 @@ function buildUserPrompt(payload) {
       "Derive an incident type if the user selected Auto-detect.",
       "Provide a realistic timeline when evidence supports it.",
       "Recommend immediate containment and follow-up remediation steps.",
+      "Follow the executive summary and PIR template style described in the system prompt.",
+      "For the PIR, include phase-based narrative, evidence-backed findings, and table-friendly detail objects whenever the evidence supports them.",
+      "Return string arrays for technical findings, evidence highlights, indicators, recommendations, lessons learned, open questions, remediation steps, and talking points. Use object arrays only for timeline, infrastructure, affected accounts/assets, fraud path, and risk register.",
+      "For the executive summary, make the short version understandable to non-technical leadership and make the urgent actions explicit.",
       "Use concise bullets and structured findings.",
     ].join("\n"),
+    "INCIDENT-TYPE GUIDANCE",
+    incidentGuidance,
   ].join("\n\n");
 }
 
 function getResponseTemplate() {
   return {
+    report_metadata: {
+      report_title: "",
+      report_subtitle: "",
+      prepared_for: "",
+      prepared_by: "",
+      report_date: "",
+      classification: "Confidential",
+    },
     incident_profile: {
       incident_type: "",
       severity: "",
       confidence: "",
       status: "",
       scope: "",
+      reporting_window: "",
+      attack_summary: "",
+    },
+    executive_brief: {
+      headline: "",
+      short_version: "",
+      full_scope: "",
+      why_it_matters: "",
+      immediate_actions: [],
+      bottom_line: "",
     },
     executive_summary: "",
     incident_summary: {
       what_happened: "",
       impact: "",
+      business_risk: "",
       affected_assets: [],
       likely_root_cause: "",
+      key_observations: [],
       priority_actions: [],
+      decisions_required: [],
     },
     pir: {
       title: "",
+      subtitle: "",
       overview: "",
+      summary_of_findings: "",
+      scope_and_exposure: "",
       business_impact: "",
+      attack_narrative: "",
       technical_findings: [],
+      evidence_highlights: [],
       timeline: [],
+      attacker_infrastructure: [],
+      affected_accounts: [],
+      affected_assets: [],
+      fraud_or_abuse_path: [],
       indicators_of_compromise: [],
       containment_actions: [],
       eradication_actions: [],
       recovery_actions: [],
       recommendations: [],
       lessons_learned: [],
+      open_questions: [],
+      references: [],
     },
     timeline_report: {
       events: [],
@@ -463,20 +568,116 @@ function getResponseTemplate() {
       users: [],
       ips: [],
       domains: [],
+      urls: [],
+      email_addresses: [],
       hashes: [],
       artifacts: [],
     },
+    risk_register: [],
     remediation_plan: {
       immediate: [],
       next_24_hours: [],
       hardening: [],
+      strategic: [],
     },
     customer_update: {
       subject: "",
       message: "",
+      talking_points: [],
     },
   };
 }
+
+function getIncidentSpecificGuidance(incidentType) {
+  const normalizedType = normalizeIncidentTypeKey(incidentType);
+  const lines = [
+    ...INCIDENT_TEMPLATE_GUIDANCE.generic,
+    ...(INCIDENT_TEMPLATE_GUIDANCE[normalizedType] || []),
+  ];
+
+  return lines.map((line) => `- ${line}`).join("\n");
+}
+
+function normalizeIncidentTypeKey(incidentType) {
+  const value = (incidentType || "").toString().trim().toLowerCase();
+
+  if (value.includes("phishing") || value.includes("bec")) {
+    return "phishing_bec";
+  }
+  if (value.includes("malware") || value.includes("ransomware")) {
+    return "malware_ransomware";
+  }
+  if (value.includes("identity") || value.includes("account compromise")) {
+    return "identity_account_compromise";
+  }
+  if (value.includes("endpoint")) {
+    return "endpoint_compromise";
+  }
+  if (value.includes("network")) {
+    return "network_intrusion";
+  }
+  if (value.includes("cloud") || value.includes("saas")) {
+    return "cloud_saas_incident";
+  }
+  if (value.includes("exfiltration")) {
+    return "data_exfiltration";
+  }
+  if (value.includes("insider")) {
+    return "insider_threat";
+  }
+  if (value.includes("vendor") || value.includes("third-party") || value.includes("third party")) {
+    return "third_party_vendor_incident";
+  }
+  if (value.includes("vulnerability") || value.includes("exploitation")) {
+    return "vulnerability_exploitation";
+  }
+  if (value.includes("disruption") || value.includes("operational") || value.includes("service")) {
+    return "operational_service_disruption";
+  }
+  if (value.includes("compliance") || value.includes("policy")) {
+    return "compliance_policy_event";
+  }
+
+  return "generic";
+}
+
+const OBJECT_LIST_ALIASES = {
+  attacker_infrastructure: {
+    ip_address: ["ip_address", "ip", "source_ip", "address", "indicator"],
+    asn: ["asn", "as_number", "autonomous_system_number"],
+    provider: ["provider", "isp", "service", "host", "hostname"],
+    region: ["region", "geo", "country", "location"],
+    role: ["role", "purpose", "type", "description"],
+    notes: ["notes", "details", "summary", "evidence", "context"],
+  },
+  affected_accounts: {
+    identifier: ["identifier", "account", "user", "email", "username", "principal", "mailbox"],
+    account_type: ["account_type", "type", "category"],
+    status: ["status", "state", "condition"],
+    role: ["role", "title", "function", "privilege"],
+    notes: ["notes", "details", "summary", "context"],
+  },
+  affected_assets: {
+    asset: ["asset", "hostname", "host", "system", "resource", "mailbox", "application"],
+    asset_type: ["asset_type", "type", "category"],
+    owner: ["owner", "custodian", "assigned_to", "user"],
+    status: ["status", "state", "condition"],
+    notes: ["notes", "details", "summary", "context"],
+  },
+  fraud_or_abuse_path: {
+    step: ["step", "action", "activity", "event", "phase"],
+    description: ["description", "details", "summary", "narrative"],
+    status: ["status", "state", "result"],
+    notes: ["notes", "evidence", "context"],
+  },
+  risk_register: {
+    risk: ["risk", "description", "summary", "issue", "finding", "name", "title", "details"],
+    status: ["status", "state", "disposition", "progress"],
+    priority: ["priority", "severity", "level"],
+    owner: ["owner", "assigned_to", "assignee", "team"],
+    next_step: ["next_step", "next_steps", "action", "recommended_action", "mitigation", "follow_up"],
+  },
+};
 
 function parseJsonResponse(content) {
   const trimmed = content.trim();
@@ -504,22 +705,56 @@ function normalizeAnalysis(raw) {
 
   deepMerge(merged, raw || {});
 
+  merged.report_metadata.report_title = toParagraph(merged.report_metadata.report_title);
+  merged.report_metadata.report_subtitle = toParagraph(merged.report_metadata.report_subtitle);
+  merged.report_metadata.prepared_for = toParagraph(merged.report_metadata.prepared_for);
+  merged.report_metadata.prepared_by = toParagraph(merged.report_metadata.prepared_by);
+  merged.report_metadata.report_date = toParagraph(merged.report_metadata.report_date);
+  merged.report_metadata.classification = toParagraph(merged.report_metadata.classification) || "Confidential";
+
   merged.incident_profile = merged.incident_profile || template.incident_profile;
+  merged.incident_profile.reporting_window = toParagraph(merged.incident_profile.reporting_window);
+  merged.incident_profile.attack_summary = toParagraph(merged.incident_profile.attack_summary);
+
+  merged.executive_brief.headline = toParagraph(merged.executive_brief.headline);
+  merged.executive_brief.short_version = toParagraph(merged.executive_brief.short_version);
+  merged.executive_brief.full_scope = toParagraph(merged.executive_brief.full_scope);
+  merged.executive_brief.why_it_matters = toParagraph(merged.executive_brief.why_it_matters);
+  merged.executive_brief.immediate_actions = toList(merged.executive_brief.immediate_actions);
+  merged.executive_brief.bottom_line = toParagraph(merged.executive_brief.bottom_line);
+
   merged.executive_summary = toParagraph(merged.executive_summary);
   merged.incident_summary.what_happened = toParagraph(merged.incident_summary.what_happened);
   merged.incident_summary.impact = toParagraph(merged.incident_summary.impact);
+  merged.incident_summary.business_risk = toParagraph(merged.incident_summary.business_risk);
   merged.incident_summary.likely_root_cause = toParagraph(merged.incident_summary.likely_root_cause);
   merged.incident_summary.affected_assets = toList(merged.incident_summary.affected_assets);
+  merged.incident_summary.key_observations = toList(merged.incident_summary.key_observations);
   merged.incident_summary.priority_actions = toList(merged.incident_summary.priority_actions);
+  merged.incident_summary.decisions_required = toList(merged.incident_summary.decisions_required);
 
+  merged.pir.title = toParagraph(merged.pir.title);
+  merged.pir.subtitle = toParagraph(merged.pir.subtitle);
+  merged.pir.summary_of_findings = toParagraph(merged.pir.summary_of_findings);
+  merged.pir.overview = toParagraph(merged.pir.overview);
+  merged.pir.scope_and_exposure = toParagraph(merged.pir.scope_and_exposure);
+  merged.pir.business_impact = toParagraph(merged.pir.business_impact);
+  merged.pir.attack_narrative = toParagraph(merged.pir.attack_narrative);
   merged.pir.technical_findings = toList(merged.pir.technical_findings);
+  merged.pir.evidence_highlights = toList(merged.pir.evidence_highlights);
   merged.pir.timeline = normalizeTimeline(merged.pir.timeline);
+  merged.pir.attacker_infrastructure = normalizeObjectList(merged.pir.attacker_infrastructure, OBJECT_LIST_ALIASES.attacker_infrastructure);
+  merged.pir.affected_accounts = normalizeObjectList(merged.pir.affected_accounts, OBJECT_LIST_ALIASES.affected_accounts);
+  merged.pir.affected_assets = normalizeObjectList(merged.pir.affected_assets, OBJECT_LIST_ALIASES.affected_assets);
+  merged.pir.fraud_or_abuse_path = normalizeObjectList(merged.pir.fraud_or_abuse_path, OBJECT_LIST_ALIASES.fraud_or_abuse_path);
   merged.pir.indicators_of_compromise = toList(merged.pir.indicators_of_compromise);
   merged.pir.containment_actions = toList(merged.pir.containment_actions);
   merged.pir.eradication_actions = toList(merged.pir.eradication_actions);
   merged.pir.recovery_actions = toList(merged.pir.recovery_actions);
   merged.pir.recommendations = toList(merged.pir.recommendations);
   merged.pir.lessons_learned = toList(merged.pir.lessons_learned);
+  merged.pir.open_questions = toList(merged.pir.open_questions);
+  merged.pir.references = toList(merged.pir.references);
 
   merged.timeline_report.events = normalizeTimeline(merged.timeline_report.events.length ? merged.timeline_report.events : merged.pir.timeline);
 
@@ -527,11 +762,31 @@ function normalizeAnalysis(raw) {
     merged.ioc_report[key] = toList(merged.ioc_report[key]);
   }
 
+  merged.risk_register = normalizeObjectList(merged.risk_register, OBJECT_LIST_ALIASES.risk_register);
+  merged.risk_register = merged.risk_register.map(normalizeRiskRegisterEntry);
   merged.remediation_plan.immediate = toList(merged.remediation_plan.immediate);
   merged.remediation_plan.next_24_hours = toList(merged.remediation_plan.next_24_hours);
   merged.remediation_plan.hardening = toList(merged.remediation_plan.hardening);
+  merged.remediation_plan.strategic = toList(merged.remediation_plan.strategic);
   merged.customer_update.subject = toParagraph(merged.customer_update.subject);
   merged.customer_update.message = toParagraph(merged.customer_update.message);
+  merged.customer_update.talking_points = toList(merged.customer_update.talking_points);
+
+  if (!merged.pir.indicators_of_compromise.length) {
+    merged.pir.indicators_of_compromise = flattenIocReport(merged.ioc_report);
+  }
+
+  if (!merged.executive_summary) {
+    merged.executive_summary = merged.executive_brief.short_version || merged.executive_brief.headline || merged.pir.summary_of_findings || merged.pir.overview;
+  }
+
+  if (!merged.pir.title) {
+    merged.pir.title = merged.report_metadata.report_title || "Post Incident Report";
+  }
+
+  if (!merged.report_metadata.report_title) {
+    merged.report_metadata.report_title = merged.pir.title || "Incident Report";
+  }
 
   return merged;
 }
@@ -568,25 +823,166 @@ function normalizeTimeline(value) {
     return value
       .map((entry) => {
         if (typeof entry === "string") {
-          return { timestamp: "", event: entry.trim(), source: "" };
+          return { timestamp: "", phase: "", event: entry.trim(), details: "", source: "", actor: "", ip_address: "" };
         }
         return {
           timestamp: toParagraph(entry.timestamp || entry.time || entry.date),
+          phase: toParagraph(entry.phase || entry.stage || ""),
           event: toParagraph(entry.event || entry.summary || entry.description),
+          details: toParagraph(entry.details || entry.notes || ""),
           source: toParagraph(entry.source || entry.evidence || ""),
+          actor: toParagraph(entry.actor || entry.user || ""),
+          ip_address: toParagraph(entry.ip_address || entry.ip || entry.source_ip || ""),
         };
       })
       .filter((entry) => entry.event);
   }
 
-  return toList(value).map((item) => ({ timestamp: "", event: item, source: "" }));
+  return toList(value).map((item) => ({ timestamp: "", phase: "", event: item, details: "", source: "", actor: "", ip_address: "" }));
+}
+
+function normalizeObjectList(value, keys) {
+  if (!value) {
+    return [];
+  }
+
+  const aliasMap = Array.isArray(keys)
+    ? Object.fromEntries(keys.map((key) => [key, [key]]))
+    : keys;
+  const canonicalKeys = Object.keys(aliasMap);
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === "string") {
+          return { [canonicalKeys[0]]: toParagraph(item) };
+        }
+
+        const normalized = {};
+        canonicalKeys.forEach((key) => {
+          normalized[key] = firstMatchingText(item, aliasMap[key]);
+        });
+
+        if (!normalized[canonicalKeys[0]]) {
+          normalized[canonicalKeys[0]] = objectToParagraph(item);
+        }
+
+        return normalized;
+      })
+      .filter((item) => canonicalKeys.some((key) => item[key]));
+  }
+
+  return toList(value).map((item) => ({ [canonicalKeys[0]]: item }));
 }
 
 function toParagraph(value) {
   if (!value) {
     return "";
   }
-  return String(value).trim();
+
+  if (Array.isArray(value)) {
+    return value.map((item) => toParagraph(item)).filter(Boolean).join("; ");
+  }
+
+  if (typeof value === "object") {
+    return objectToParagraph(value);
+  }
+
+  const normalized = String(value).trim();
+  return normalized === "[object Object]" ? "" : normalized;
+}
+
+function firstMatchingText(item, aliases) {
+  for (const key of aliases || []) {
+    const text = toParagraph(item?.[key]);
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function objectToParagraph(value) {
+  if (!value || typeof value !== "object") {
+    return String(value || "").trim();
+  }
+
+  const parts = Object.entries(value)
+    .map(([key, entryValue]) => ({
+      key,
+      text: typeof entryValue === "object" ? toParagraph(entryValue) : String(entryValue || "").trim(),
+    }))
+    .filter(({ text }) => text);
+
+  if (!parts.length) {
+    return "";
+  }
+
+  if (parts.length === 1) {
+    return parts[0].text;
+  }
+
+  return parts.map(({ key, text }) => `${humanizeKey(key)}: ${text}`).join(" | ");
+}
+
+function humanizeKey(value) {
+  return (value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function flattenIocReport(iocReport) {
+  return Object.entries(iocReport || {})
+    .flatMap(([key, values]) => values.map((value) => `${humanizeKey(key)}: ${value}`))
+    .filter(Boolean);
+}
+
+function normalizeRiskRegisterEntry(entry) {
+  const normalized = { ...entry };
+  const segments = parseLabeledSegments(entry.risk);
+  const riskId = segments["risk id"];
+  const riskDescription = segments["risk description"] || segments.risk || segments.description || segments.summary;
+
+  if (!normalized.risk && riskDescription) {
+    normalized.risk = riskId ? `${riskId}: ${riskDescription}` : riskDescription;
+  }
+
+  if (normalized.risk && riskDescription && normalized.risk.includes("|") ) {
+    normalized.risk = riskId ? `${riskId}: ${riskDescription}` : riskDescription;
+  }
+
+  if (!normalized.status) {
+    normalized.status = segments["current status"] || segments.status;
+  }
+
+  if (!normalized.priority) {
+    normalized.priority = segments.priority || segments.severity || segments.impact || segments.likelihood;
+  }
+
+  if (!normalized.owner) {
+    normalized.owner = segments.owner || segments.team;
+  }
+
+  if (!normalized.next_step) {
+    normalized.next_step = segments["mitigation actions"] || segments["next step"] || segments.action || segments["follow up"];
+  }
+
+  return normalized;
+}
+
+function parseLabeledSegments(value) {
+  return String(value || "")
+    .split("|")
+    .map((segment) => segment.trim())
+    .reduce((accumulator, segment) => {
+      const match = segment.match(/^([^:]+):\s*(.+)$/);
+      if (match) {
+        accumulator[match[1].trim().toLowerCase()] = match[2].trim();
+      }
+      return accumulator;
+    }, {});
 }
 
 function renderAnalysis(analysis, selectedOutputs, payload) {
@@ -646,26 +1042,47 @@ function buildResultCard(outputKey, analysis) {
   switch (outputKey) {
     case "pir":
       appendParagraph(card, analysis.pir.title || OUTPUT_LABELS.pir, true);
+      appendSection(card, "Subtitle", analysis.pir.subtitle);
+      appendSection(card, "Summary of Findings", analysis.pir.summary_of_findings);
       appendSection(card, "Overview", analysis.pir.overview);
+      appendSection(card, "Scope and Exposure", analysis.pir.scope_and_exposure);
       appendSection(card, "Business Impact", analysis.pir.business_impact);
+      appendSection(card, "Attack Narrative", analysis.pir.attack_narrative);
+      appendListSection(card, "Evidence Highlights", analysis.pir.evidence_highlights);
       appendListSection(card, "Technical Findings", analysis.pir.technical_findings);
       appendTimelineSection(card, "Timeline", analysis.pir.timeline);
+      appendObjectMatrixSection(card, "Attacker Infrastructure", analysis.pir.attacker_infrastructure, ["ip_address", "asn", "provider", "region", "role", "notes"]);
+      appendObjectMatrixSection(card, "Affected Accounts", analysis.pir.affected_accounts, ["identifier", "account_type", "status", "role", "notes"]);
+      appendObjectMatrixSection(card, "Affected Assets", analysis.pir.affected_assets, ["asset", "asset_type", "owner", "status", "notes"]);
+      appendObjectMatrixSection(card, "Fraud / Abuse Path", analysis.pir.fraud_or_abuse_path, ["step", "description", "status", "notes"]);
       appendListSection(card, "Indicators of Compromise", analysis.pir.indicators_of_compromise);
+      appendRiskRegisterSection(card, analysis.risk_register);
       appendListSection(card, "Containment Actions", analysis.pir.containment_actions);
       appendListSection(card, "Eradication Actions", analysis.pir.eradication_actions);
       appendListSection(card, "Recovery Actions", analysis.pir.recovery_actions);
       appendListSection(card, "Recommendations", analysis.pir.recommendations);
       appendListSection(card, "Lessons Learned", analysis.pir.lessons_learned);
+      appendListSection(card, "Open Questions", analysis.pir.open_questions);
+      appendListSection(card, "References", analysis.pir.references);
       break;
     case "incident_summary":
       appendSection(card, "What Happened", analysis.incident_summary.what_happened);
       appendSection(card, "Impact", analysis.incident_summary.impact);
+      appendSection(card, "Business Risk", analysis.incident_summary.business_risk);
       appendListSection(card, "Affected Assets", analysis.incident_summary.affected_assets);
       appendSection(card, "Likely Root Cause", analysis.incident_summary.likely_root_cause);
+      appendListSection(card, "Key Observations", analysis.incident_summary.key_observations);
       appendListSection(card, "Priority Actions", analysis.incident_summary.priority_actions);
+      appendListSection(card, "Decisions Required", analysis.incident_summary.decisions_required);
       break;
     case "executive_summary":
-      appendSection(card, "Executive Summary", analysis.executive_summary);
+      appendSection(card, "Headline", analysis.executive_brief.headline);
+      appendSection(card, "Short Version", analysis.executive_brief.short_version || analysis.executive_summary);
+      appendSection(card, "Full Scope", analysis.executive_brief.full_scope);
+      appendSection(card, "Why It Matters", analysis.executive_brief.why_it_matters);
+      appendListSection(card, "Immediate Actions", analysis.executive_brief.immediate_actions);
+      appendSection(card, "Bottom Line", analysis.executive_brief.bottom_line);
+      appendRiskRegisterSection(card, analysis.risk_register);
       break;
     case "timeline_report":
       appendTimelineSection(card, "Timeline", analysis.timeline_report.events);
@@ -677,10 +1094,12 @@ function buildResultCard(outputKey, analysis) {
       appendListSection(card, "Immediate Actions", analysis.remediation_plan.immediate);
       appendListSection(card, "Next 24 Hours", analysis.remediation_plan.next_24_hours);
       appendListSection(card, "Hardening", analysis.remediation_plan.hardening);
+      appendListSection(card, "Strategic Improvements", analysis.remediation_plan.strategic);
       break;
     case "customer_update":
       appendSection(card, "Subject", analysis.customer_update.subject);
       appendSection(card, "Message", analysis.customer_update.message);
+      appendListSection(card, "Talking Points", analysis.customer_update.talking_points);
       break;
     default:
       appendSection(card, "Content", JSON.stringify(analysis, null, 2));
@@ -748,7 +1167,7 @@ function appendTimelineSection(parent, label, events) {
     const title = document.createElement("strong");
     title.textContent = event.timestamp ? `${event.timestamp} | ${event.event}` : event.event;
     const source = document.createElement("p");
-    source.textContent = event.source || "No source string supplied.";
+    source.textContent = [event.phase, event.actor, event.ip_address, event.details, event.source].filter(Boolean).join(" | ") || "No supporting detail supplied.";
     item.append(title, source);
     grid.appendChild(item);
   });
@@ -790,6 +1209,63 @@ function appendIocSection(parent, iocReport) {
   parent.appendChild(wrap);
 }
 
+function appendObjectMatrixSection(parent, label, items, keys) {
+  if (!items?.length) {
+    return;
+  }
+
+  const wrap = document.createElement("section");
+  wrap.className = "subsection";
+  const heading = document.createElement("h5");
+  heading.textContent = label;
+  const list = document.createElement("ul");
+
+  items.forEach((item) => {
+    const li = document.createElement("li");
+    li.textContent = keys
+      .map((key) => item[key])
+      .filter(Boolean)
+      .join(" | ");
+    if (li.textContent) {
+      list.appendChild(li);
+    }
+  });
+
+  if (!list.children.length) {
+    return;
+  }
+
+  wrap.append(heading, list);
+  parent.appendChild(wrap);
+}
+
+function appendRiskRegisterSection(parent, risks) {
+  if (!risks?.length) {
+    return;
+  }
+
+  const wrap = document.createElement("section");
+  wrap.className = "subsection";
+  const heading = document.createElement("h5");
+  heading.textContent = "Risk Register";
+  const list = document.createElement("ul");
+
+  risks.forEach((risk) => {
+    const li = document.createElement("li");
+    li.textContent = [risk.risk, risk.status, risk.priority, risk.owner, risk.next_step].filter(Boolean).join(" | ");
+    if (li.textContent) {
+      list.appendChild(li);
+    }
+  });
+
+  if (!list.children.length) {
+    return;
+  }
+
+  wrap.append(heading, list);
+  parent.appendChild(wrap);
+}
+
 function renderError(error) {
   resultsEmpty.hidden = false;
   resultsContainer.hidden = true;
@@ -808,14 +1284,26 @@ function extractPlainText(outputKey, analysis) {
     parts.push(...analysis.pir.technical_findings, ...analysis.pir.indicators_of_compromise, ...analysis.pir.recommendations);
   }
   if (outputKey === "incident_summary") {
-    parts.push(analysis.incident_summary.what_happened, analysis.incident_summary.impact, analysis.incident_summary.likely_root_cause);
-    parts.push(...analysis.incident_summary.priority_actions);
+    parts.push(
+      analysis.incident_summary.what_happened,
+      analysis.incident_summary.impact,
+      analysis.incident_summary.business_risk,
+      analysis.incident_summary.likely_root_cause,
+    );
+    parts.push(...analysis.incident_summary.key_observations, ...analysis.incident_summary.priority_actions, ...analysis.incident_summary.decisions_required);
   }
   if (outputKey === "executive_summary") {
-    parts.push(analysis.executive_summary);
+    parts.push(
+      analysis.executive_brief.headline,
+      analysis.executive_brief.short_version || analysis.executive_summary,
+      analysis.executive_brief.full_scope,
+      analysis.executive_brief.why_it_matters,
+      analysis.executive_brief.bottom_line,
+    );
+    parts.push(...analysis.executive_brief.immediate_actions);
   }
   if (outputKey === "timeline_report") {
-    parts.push(...analysis.timeline_report.events.map((event) => `${event.timestamp} ${event.event} ${event.source}`.trim()));
+    parts.push(...analysis.timeline_report.events.map((event) => [event.timestamp, event.phase, event.event, event.details, event.actor, event.ip_address, event.source].filter(Boolean).join(" | ")));
   }
   if (outputKey === "ioc_report") {
     for (const [name, values] of Object.entries(analysis.ioc_report)) {
@@ -825,10 +1313,10 @@ function extractPlainText(outputKey, analysis) {
     }
   }
   if (outputKey === "remediation_plan") {
-    parts.push(...analysis.remediation_plan.immediate, ...analysis.remediation_plan.next_24_hours, ...analysis.remediation_plan.hardening);
+    parts.push(...analysis.remediation_plan.immediate, ...analysis.remediation_plan.next_24_hours, ...analysis.remediation_plan.hardening, ...analysis.remediation_plan.strategic);
   }
   if (outputKey === "customer_update") {
-    parts.push(analysis.customer_update.subject, analysis.customer_update.message);
+    parts.push(analysis.customer_update.subject, analysis.customer_update.message, ...analysis.customer_update.talking_points);
   }
 
   return parts.filter(Boolean).join("\n\n");
@@ -889,73 +1377,110 @@ async function exportSelectedDocs() {
 
 async function buildDocx(outputKey, analysis, payload) {
   const docxLibrary = await getDocxLibrary();
-  const { Document, HeadingLevel, Packer, Paragraph, TextRun } = docxLibrary;
+  const { Document, HeadingLevel, Packer, Paragraph } = docxLibrary;
 
   const children = [];
-  children.push(new Paragraph({
-    text: OUTPUT_LABELS[outputKey] || outputKey,
-    heading: HeadingLevel.TITLE,
-  }));
+  const title = getOutputDocumentTitle(outputKey, analysis, payload);
+  const subtitle = getOutputDocumentSubtitle(outputKey, analysis, payload);
 
-  children.push(new Paragraph({
-    children: [
-      new TextRun({ text: `Client: ${payload.metadata.clientName || "Unspecified"}\n`, bold: true }),
-      new TextRun(`Case: ${payload.metadata.caseTitle || "Unspecified"}\n`),
-      new TextRun(`Analyst: ${payload.metadata.analystName || "Unspecified"}\n`),
-      new TextRun(`Generated: ${new Date().toLocaleString()}`),
-    ],
-  }));
+  children.push(new Paragraph({ text: title, heading: HeadingLevel.TITLE }));
+  if (subtitle) {
+    children.push(new Paragraph({ text: subtitle }));
+  }
 
-  appendDocParagraph(children, `Incident Type: ${analysis.incident_profile.incident_type || payload.metadata.incidentType}`);
-  appendDocParagraph(children, `Severity: ${analysis.incident_profile.severity || payload.metadata.severity || "Pending"}`);
-  appendDocParagraph(children, `Confidence: ${analysis.incident_profile.confidence || "Pending"}`);
+  appendDocMetadataTable(children, analysis, payload, outputKey);
 
   if (outputKey === "pir") {
-    appendDocHeading(children, "Overview");
+    appendDocHeading(children, "1. Executive Overview");
+    appendDocParagraph(children, analysis.pir.summary_of_findings || analysis.pir.overview);
     appendDocParagraph(children, analysis.pir.overview);
-    appendDocHeading(children, "Business Impact");
+    appendDocHeading(children, "2. Scope and Business Impact");
+    appendDocParagraph(children, analysis.pir.scope_and_exposure);
     appendDocParagraph(children, analysis.pir.business_impact);
-    appendDocBulletList(children, analysis.pir.technical_findings, "Technical Findings");
-    appendDocTimeline(children, analysis.pir.timeline, "Timeline");
-    appendDocBulletList(children, analysis.pir.indicators_of_compromise, "Indicators of Compromise");
-    appendDocBulletList(children, analysis.pir.containment_actions, "Containment Actions");
-    appendDocBulletList(children, analysis.pir.eradication_actions, "Eradication Actions");
-    appendDocBulletList(children, analysis.pir.recovery_actions, "Recovery Actions");
-    appendDocBulletList(children, analysis.pir.recommendations, "Recommendations");
-    appendDocBulletList(children, analysis.pir.lessons_learned, "Lessons Learned");
+    appendDocHeading(children, "3. Attack Narrative");
+    appendDocParagraph(children, analysis.pir.attack_narrative);
+    appendDocBulletList(children, analysis.pir.evidence_highlights, "4. Evidence Highlights");
+    appendDocBulletList(children, analysis.pir.technical_findings, "5. Technical Findings");
+    appendDocTimelineTable(children, analysis.pir.timeline, "6. Timeline of Events");
+    appendDocObjectTable(children, "7. Attacker Infrastructure", analysis.pir.attacker_infrastructure, [
+      { key: "ip_address", label: "IP Address" },
+      { key: "asn", label: "ASN" },
+      { key: "provider", label: "Provider" },
+      { key: "region", label: "Region" },
+      { key: "role", label: "Role / Notes" },
+    ]);
+    appendDocObjectTable(children, "8. Affected Accounts", analysis.pir.affected_accounts, [
+      { key: "identifier", label: "Account" },
+      { key: "account_type", label: "Type" },
+      { key: "status", label: "Status" },
+      { key: "role", label: "Role" },
+      { key: "notes", label: "Notes" },
+    ]);
+    appendDocObjectTable(children, "9. Affected Assets", analysis.pir.affected_assets, [
+      { key: "asset", label: "Asset" },
+      { key: "asset_type", label: "Type" },
+      { key: "owner", label: "Owner" },
+      { key: "status", label: "Status" },
+      { key: "notes", label: "Notes" },
+    ]);
+    appendDocObjectTable(children, "10. Fraud / Abuse Activity", analysis.pir.fraud_or_abuse_path, [
+      { key: "step", label: "Step" },
+      { key: "description", label: "Description" },
+      { key: "status", label: "Status" },
+      { key: "notes", label: "Notes" },
+    ]);
+    appendDocIocTables(children, analysis.ioc_report, "11. Indicators of Compromise");
+    appendDocRiskRegister(children, analysis.risk_register, "12. Risk Register");
+    appendDocBulletList(children, analysis.pir.containment_actions, "13. Containment Actions");
+    appendDocBulletList(children, analysis.pir.eradication_actions, "14. Eradication Actions");
+    appendDocBulletList(children, analysis.pir.recovery_actions, "15. Recovery Actions");
+    appendDocBulletList(children, analysis.pir.recommendations, "16. Recommendations");
+    appendDocBulletList(children, analysis.pir.lessons_learned, "17. Lessons Learned");
+    appendDocBulletList(children, analysis.pir.open_questions, "18. Open Questions");
+    appendDocBulletList(children, analysis.pir.references, "19. References");
   }
 
   if (outputKey === "incident_summary") {
-    appendDocHeading(children, "What Happened");
+    appendDocHeading(children, "Incident Summary");
     appendDocParagraph(children, analysis.incident_summary.what_happened);
-    appendDocHeading(children, "Impact");
+    appendDocHeading(children, "Business Impact");
     appendDocParagraph(children, analysis.incident_summary.impact);
+    appendDocParagraph(children, analysis.incident_summary.business_risk);
     appendDocBulletList(children, analysis.incident_summary.affected_assets, "Affected Assets");
     appendDocHeading(children, "Likely Root Cause");
     appendDocParagraph(children, analysis.incident_summary.likely_root_cause);
+    appendDocBulletList(children, analysis.incident_summary.key_observations, "Key Observations");
     appendDocBulletList(children, analysis.incident_summary.priority_actions, "Priority Actions");
+    appendDocBulletList(children, analysis.incident_summary.decisions_required, "Decisions Required");
   }
 
   if (outputKey === "executive_summary") {
-    appendDocHeading(children, "Executive Summary");
-    appendDocParagraph(children, analysis.executive_summary);
+    appendDocHeading(children, "WHAT HAPPENED - THE SHORT VERSION");
+    appendDocParagraph(children, analysis.executive_brief.short_version || analysis.executive_summary);
+    appendDocHeading(children, "THE FULL SCOPE");
+    appendDocParagraph(children, analysis.executive_brief.full_scope || analysis.pir.attack_narrative || analysis.pir.overview);
+    appendDocHeading(children, "WHY IT MATTERS");
+    appendDocParagraph(children, analysis.executive_brief.why_it_matters || analysis.incident_summary.business_risk || analysis.pir.business_impact);
+    appendDocBulletList(children, analysis.executive_brief.immediate_actions.length ? analysis.executive_brief.immediate_actions : analysis.incident_summary.priority_actions, "WHAT STILL NEEDS TO HAPPEN - URGENTLY");
+    appendDocHeading(children, "BOTTOM LINE");
+    appendDocParagraph(children, analysis.executive_brief.bottom_line || analysis.executive_summary);
+    appendDocRiskRegister(children, analysis.risk_register, "Key Risks and Status");
   }
 
   if (outputKey === "timeline_report") {
-    appendDocTimeline(children, analysis.timeline_report.events, "Timeline");
+    appendDocTimelineTable(children, analysis.timeline_report.events, "Timeline");
   }
 
   if (outputKey === "ioc_report") {
-    appendDocHeading(children, "Indicators of Compromise");
-    for (const [name, values] of Object.entries(analysis.ioc_report)) {
-      appendDocBulletList(children, values, name.replaceAll("_", " ").toUpperCase());
-    }
+    appendDocIocTables(children, analysis.ioc_report, "Indicators of Compromise");
   }
 
   if (outputKey === "remediation_plan") {
     appendDocBulletList(children, analysis.remediation_plan.immediate, "Immediate Actions");
     appendDocBulletList(children, analysis.remediation_plan.next_24_hours, "Next 24 Hours");
     appendDocBulletList(children, analysis.remediation_plan.hardening, "Hardening");
+    appendDocBulletList(children, analysis.remediation_plan.strategic, "Strategic Improvements");
+    appendDocRiskRegister(children, analysis.risk_register, "Related Risks");
   }
 
   if (outputKey === "customer_update") {
@@ -963,15 +1488,36 @@ async function buildDocx(outputKey, analysis, payload) {
     appendDocParagraph(children, analysis.customer_update.subject);
     appendDocHeading(children, "Message");
     appendDocParagraph(children, analysis.customer_update.message);
+    appendDocBulletList(children, analysis.customer_update.talking_points, "Talking Points");
   }
 
   const doc = new Document({ sections: [{ children }] });
   return Packer.toBlob(doc);
 }
 
-function appendDocHeading(children, text) {
+function getOutputDocumentTitle(outputKey, analysis, payload) {
+  if (outputKey === "pir") {
+    return analysis.pir.title || analysis.report_metadata.report_title || OUTPUT_LABELS.pir;
+  }
+
+  if (outputKey === "executive_summary") {
+    return analysis.executive_brief.headline || OUTPUT_LABELS.executive_summary;
+  }
+
+  return OUTPUT_LABELS[outputKey] || payload.metadata.caseTitle || "Incident Report";
+}
+
+function getOutputDocumentSubtitle(outputKey, analysis, payload) {
+  if (outputKey === "executive_summary") {
+    return [payload.metadata.clientName, analysis.report_metadata.report_date, analysis.report_metadata.classification].filter(Boolean).join(" | ");
+  }
+
+  return [analysis.pir.subtitle, payload.metadata.clientName, analysis.report_metadata.report_date].filter(Boolean).join(" | ");
+}
+
+function appendDocHeading(children, text, level = "HEADING_2") {
   const { HeadingLevel, Paragraph } = getLoadedDocxLibrary();
-  children.push(new Paragraph({ text, heading: HeadingLevel.HEADING_2 }));
+  children.push(new Paragraph({ text, heading: HeadingLevel[level] }));
 }
 
 function appendDocParagraph(children, text) {
@@ -996,16 +1542,100 @@ function appendDocBulletList(children, items, heading) {
   });
 }
 
-function appendDocTimeline(children, events, heading) {
-  const { Paragraph } = getLoadedDocxLibrary();
+function appendDocMetadataTable(children, analysis, payload, outputKey) {
+  const rows = [
+    { field: "Client / Organization", value: payload.metadata.clientName || analysis.report_metadata.prepared_for || "Unspecified" },
+    { field: "Case Title", value: payload.metadata.caseTitle || analysis.report_metadata.report_title || "Unspecified" },
+    { field: "Analyst", value: payload.metadata.analystName || analysis.report_metadata.prepared_by || "Unspecified" },
+    { field: "Incident Type", value: analysis.incident_profile.incident_type || payload.metadata.incidentType || "Pending" },
+    { field: "Severity", value: analysis.incident_profile.severity || payload.metadata.severity || "Pending" },
+    { field: "Confidence", value: analysis.incident_profile.confidence || "Pending" },
+    { field: "Status", value: analysis.incident_profile.status || "Pending" },
+    { field: "Scope", value: analysis.incident_profile.scope || "Pending" },
+    { field: "Classification", value: analysis.report_metadata.classification || "Confidential" },
+    { field: "Prepared Date", value: analysis.report_metadata.report_date || new Date().toLocaleDateString() },
+    { field: "Output Type", value: OUTPUT_LABELS[outputKey] || outputKey },
+  ];
+
+  appendDocObjectTable(children, "Case Metadata", rows, [
+    { key: "field", label: "Field" },
+    { key: "value", label: "Value" },
+  ]);
+}
+
+function appendDocTimelineTable(children, events, heading) {
   if (!events?.length) {
     return;
   }
+
+  appendDocObjectTable(children, heading, events.map((event) => ({
+    timestamp: event.timestamp || "",
+    phase: event.phase || "",
+    event: event.event || "",
+    context: [event.actor, event.ip_address, event.details, event.source].filter(Boolean).join(" | "),
+  })), [
+    { key: "timestamp", label: "Timestamp" },
+    { key: "phase", label: "Phase" },
+    { key: "event", label: "Event" },
+    { key: "context", label: "Context" },
+  ]);
+}
+
+function appendDocIocTables(children, iocReport, heading) {
+  const rows = Object.entries(iocReport)
+    .filter(([, values]) => values.length)
+    .map(([name, values]) => ({ indicator_type: name.replaceAll("_", " ").toUpperCase(), values: values.join("; ") }));
+
+  if (!rows.length) {
+    appendDocHeading(children, heading);
+    appendDocParagraph(children, "No concrete indicators were identified in the supplied evidence.");
+    return;
+  }
+
+  appendDocObjectTable(children, heading, rows, [
+    { key: "indicator_type", label: "Indicator Type" },
+    { key: "values", label: "Values" },
+  ]);
+}
+
+function appendDocRiskRegister(children, risks, heading) {
+  if (!risks?.length) {
+    return;
+  }
+
+  appendDocObjectTable(children, heading, risks, [
+    { key: "risk", label: "Risk" },
+    { key: "status", label: "Status" },
+    { key: "priority", label: "Priority" },
+    { key: "owner", label: "Owner" },
+    { key: "next_step", label: "Next Step" },
+  ]);
+}
+
+function appendDocObjectTable(children, heading, items, columns) {
+  const { Paragraph, Table, TableCell, TableRow, TextRun, WidthType } = getLoadedDocxLibrary();
+  if (!items?.length) {
+    return;
+  }
+
   appendDocHeading(children, heading);
-  events.forEach((event) => {
-    const line = [event.timestamp, event.event, event.source].filter(Boolean).join(" | ");
-    children.push(new Paragraph({ text: line }));
+
+  const headerRow = new TableRow({
+    children: columns.map((column) => new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text: column.label, bold: true })] })],
+    })),
   });
+
+  const dataRows = items.map((item) => new TableRow({
+    children: columns.map((column) => new TableCell({
+      children: [new Paragraph({ text: toParagraph(item[column.key]) || "-" })],
+    })),
+  }));
+
+  children.push(new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [headerRow, ...dataRows],
+  }));
 }
 
 function slugify(value) {
