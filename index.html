@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Five-10 PIR Lab</title>
+  <meta name="description" content="A GitHub Pages incident workbench for SOC analysts that turns logs, analyst notes, and raw evidence into PIRs, summaries, and exportable DOCX reports.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="grid-aura" aria-hidden="true"></div>
+  <header class="site-header">
+    <a class="brand" href="#top">
+      <span class="brand-mark">510</span>
+      <span class="brand-copy">
+        <strong>Five-10 PIR Lab</strong>
+        <small>Public IR reporting workbench</small>
+      </span>
+    </a>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="#workflow">Workflow</a>
+      <a href="#workbench">Workbench</a>
+      <a href="#notes">Notes</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero panel reveal">
+      <div class="hero-copy">
+        <p class="eyebrow">Heimdall-style intake. Five-10 tone.</p>
+        <h1>Turn case notes, raw logs, and SOC summaries into usable incident documents.</h1>
+        <p class="hero-text">
+          This workbench is built for incident response teams that need faster first-pass reporting.
+          Bring in evidence, force structure around the case, run analysis through OpenRouter, and export selected outputs as `.docx`.
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#workbench">Open Workbench</a>
+          <a class="button button-secondary" href="#notes">Review Security Notes</a>
+        </div>
+      </div>
+      <div class="hero-stack">
+        <div class="stack-card stack-card-terminal">
+          <div class="stack-label">Case Feed</div>
+          <code>
+            analyst@five-10:~$ ingest case.txt<br>
+            analyst@five-10:~$ attach logs.jsonl<br>
+            analyst@five-10:~$ summarize incident<br>
+            analyst@five-10:~$ export pir.docx
+          </code>
+        </div>
+        <div class="stack-card stack-card-metrics">
+          <div>
+            <span class="metric-value">7</span>
+            <span class="metric-label">report types</span>
+          </div>
+          <div>
+            <span class="metric-value">1</span>
+            <span class="metric-label">runtime key import</span>
+          </div>
+          <div>
+            <span class="metric-value">0</span>
+            <span class="metric-label">server-side secrets</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow" class="workflow reveal">
+      <div class="section-heading">
+        <p class="eyebrow">Workflow</p>
+        <h2>Three stages from evidence to deliverable</h2>
+      </div>
+      <div class="workflow-grid">
+        <article class="panel workflow-card">
+          <span class="step-index">01</span>
+          <h3>Ingest</h3>
+          <p>Load text evidence, paste analyst observations, and pin the case to an incident type or let the model classify it.</p>
+        </article>
+        <article class="panel workflow-card">
+          <span class="step-index">02</span>
+          <h3>Analyze</h3>
+          <p>OpenRouter receives a structured case packet and returns normalized incident sections with explicit confidence and action items.</p>
+        </article>
+        <article class="panel workflow-card">
+          <span class="step-index">03</span>
+          <h3>Export</h3>
+          <p>Choose only the documents you need and export a zipped deliverable set of `.docx` files for PIRs, summaries, timelines, and remediation plans.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="workbench" class="workbench reveal">
+      <div class="section-heading">
+        <p class="eyebrow">Workbench</p>
+        <h2>Case intake and report generation</h2>
+      </div>
+
+      <div class="workbench-grid">
+        <section class="input-column">
+          <form id="analysis-form" class="form-shell" novalidate>
+            <article class="panel form-panel">
+              <div class="panel-head">
+                <h3>OpenRouter</h3>
+                <span class="panel-badge">runtime only</span>
+              </div>
+              <p class="panel-note">The API key stays in this browser session. It is not embedded into the site.</p>
+              <div class="field-grid two-up">
+                <label class="field">
+                  <span>API Key</span>
+                  <input id="api-key" name="apiKey" type="password" autocomplete="off" placeholder="sk-or-v1-...">
+                </label>
+                <label class="field">
+                  <span>Model</span>
+                  <input id="model" name="model" type="text" value="openrouter/auto" placeholder="openrouter/auto">
+                </label>
+              </div>
+              <div class="inline-actions">
+                <button id="import-key-button" class="button button-secondary" type="button">Import Key File</button>
+                <button id="clear-key-button" class="button button-ghost" type="button">Clear Session Key</button>
+                <span id="key-status" class="quiet-status" aria-live="polite">No key loaded.</span>
+              </div>
+              <input id="key-file-input" type="file" accept=".txt" hidden>
+            </article>
+
+            <article class="panel form-panel">
+              <div class="panel-head">
+                <h3>Case Metadata</h3>
+                <span class="panel-badge">normalized</span>
+              </div>
+              <div class="field-grid two-up">
+                <label class="field">
+                  <span>Client / Organization</span>
+                  <input id="client-name" name="clientName" type="text" placeholder="Acme Manufacturing">
+                </label>
+                <label class="field">
+                  <span>Case Title</span>
+                  <input id="case-title" name="caseTitle" type="text" placeholder="VPN credential compromise review">
+                </label>
+                <label class="field">
+                  <span>Analyst</span>
+                  <input id="analyst-name" name="analystName" type="text" placeholder="Max">
+                </label>
+                <label class="field">
+                  <span>Severity</span>
+                  <select id="severity" name="severity">
+                    <option value="">Auto-detect</option>
+                    <option>Informational</option>
+                    <option>Low</option>
+                    <option>Medium</option>
+                    <option>High</option>
+                    <option>Critical</option>
+                  </select>
+                </label>
+                <label class="field field-span">
+                  <span>Incident Type</span>
+                  <select id="incident-type" name="incidentType">
+                    <option value="Auto-detect">Auto-detect</option>
+                    <option>Phishing / BEC</option>
+                    <option>Malware / Ransomware</option>
+                    <option>Identity / Account Compromise</option>
+                    <option>Endpoint Compromise</option>
+                    <option>Network Intrusion</option>
+                    <option>Cloud / SaaS Incident</option>
+                    <option>Data Exfiltration</option>
+                    <option>Insider Threat</option>
+                    <option>Third-Party / Vendor Incident</option>
+                    <option>Vulnerability Exploitation</option>
+                    <option>Operational / Service Disruption</option>
+                    <option>Compliance / Policy Event</option>
+                    <option>Other</option>
+                  </select>
+                </label>
+              </div>
+            </article>
+
+            <article class="panel form-panel">
+              <div class="panel-head">
+                <h3>Narrative Inputs</h3>
+                <span class="panel-badge">required</span>
+              </div>
+              <label class="field">
+                <span>Problem Statement</span>
+                <textarea id="problem-statement" name="problemStatement" rows="5" placeholder="What happened, what triggered the investigation, and what the user or team needs answered."></textarea>
+              </label>
+              <label class="field">
+                <span>SOC Analyst Summary</span>
+                <textarea id="analyst-summary" name="analystSummary" rows="6" placeholder="Summarize what the SOC or IR analyst already believes about the event, scope, timeline, or likely root cause."></textarea>
+              </label>
+              <label class="field">
+                <span>Pasted Logs / Evidence Snippets</span>
+                <textarea id="pasted-evidence" name="pastedEvidence" rows="8" placeholder="Paste raw logs, decoded alerts, command output, ticket notes, or any other text evidence here."></textarea>
+              </label>
+            </article>
+
+            <article class="panel form-panel">
+              <div class="panel-head">
+                <h3>Evidence Files</h3>
+                <span class="panel-badge">text-based</span>
+              </div>
+              <label class="upload-zone" for="evidence-files">
+                <span>Drop or select evidence files</span>
+                <small>Supported: .txt, .log, .csv, .json, .jsonl, .xml, .md</small>
+              </label>
+              <input id="evidence-files" name="evidenceFiles" type="file" accept=".txt,.log,.csv,.json,.jsonl,.xml,.md,text/plain,application/json,text/csv,text/xml" multiple>
+              <div id="evidence-summary" class="evidence-summary">No evidence files loaded.</div>
+              <ul id="file-list" class="file-list"></ul>
+            </article>
+
+            <article class="panel form-panel">
+              <div class="panel-head">
+                <h3>Output Pack</h3>
+                <span class="panel-badge">.docx ready</span>
+              </div>
+              <div class="checkbox-grid">
+                <label class="checkbox-card"><input type="checkbox" name="outputs" value="pir" checked><span>Post Incident Report</span></label>
+                <label class="checkbox-card"><input type="checkbox" name="outputs" value="incident_summary" checked><span>Incident Summary</span></label>
+                <label class="checkbox-card"><input type="checkbox" name="outputs" value="executive_summary"><span>Executive Summary</span></label>
+                <label class="checkbox-card"><input type="checkbox" name="outputs" value="timeline_report"><span>Timeline Report</span></label>
+                <label class="checkbox-card"><input type="checkbox" name="outputs" value="ioc_report"><span>IOC Report</span></label>
+                <label class="checkbox-card"><input type="checkbox" name="outputs" value="remediation_plan"><span>Remediation Plan</span></label>
+                <label class="checkbox-card"><input type="checkbox" name="outputs" value="customer_update"><span>Customer Update</span></label>
+              </div>
+            </article>
+
+            <article class="panel form-panel action-panel">
+              <div class="inline-actions stacked-mobile">
+                <button id="analyze-button" class="button button-primary" type="submit">Analyze Incident</button>
+                <button id="download-json-button" class="button button-secondary" type="button" disabled>Download JSON</button>
+                <button id="export-docx-button" class="button button-secondary" type="button" disabled>Export Selected DOCX</button>
+              </div>
+              <p class="panel-note">If you plan to publish this repo publicly, keep the key file local and untracked. This page is designed for browser-session secrets only.</p>
+            </article>
+          </form>
+        </section>
+
+        <section class="results-column">
+          <article class="panel results-panel status-panel">
+            <div class="panel-head">
+              <h3>Run Status</h3>
+              <span id="run-state" class="panel-badge panel-badge-live">Idle</span>
+            </div>
+            <p id="run-message" class="status-copy">Load a key, add your case inputs, then run analysis.</p>
+            <div id="result-chips" class="result-chips"></div>
+          </article>
+
+          <article class="panel results-panel">
+            <div class="panel-head">
+              <h3>Structured Output</h3>
+              <span class="panel-badge">rendered</span>
+            </div>
+            <div id="results-empty" class="empty-state">
+              <p>No analysis has been run yet.</p>
+              <small>Your selected outputs will render here as separate review cards.</small>
+            </div>
+            <div id="results-container" class="results-container" hidden></div>
+          </article>
+
+          <article class="panel results-panel">
+            <div class="panel-head">
+              <h3>Raw Response</h3>
+              <span class="panel-badge">json</span>
+            </div>
+            <pre id="raw-json" class="raw-json">Awaiting analysis...</pre>
+          </article>
+        </section>
+      </div>
+    </section>
+
+    <section id="notes" class="notes reveal">
+      <div class="section-heading">
+        <p class="eyebrow">Security Notes</p>
+        <h2>Important operational constraints</h2>
+      </div>
+      <div class="workflow-grid">
+        <article class="panel workflow-card note-card">
+          <h3>Key handling</h3>
+          <p>GitHub Pages cannot safely hide a private OpenRouter key. This build uses analyst-supplied runtime credentials and stores them only for the current browser session.</p>
+        </article>
+        <article class="panel workflow-card note-card">
+          <h3>Evidence format</h3>
+          <p>This version reads text evidence directly in the browser. Binary forensic artifacts still need preprocessing or a backend parser if you want deep automation later.</p>
+        </article>
+        <article class="panel workflow-card note-card">
+          <h3>PIR meaning</h3>
+          <p>This app treats PIR as a Post Incident Report. If your internal PIR format means something else, the prompt schema can be adjusted without changing the export pipeline.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js" integrity="sha512-vRo/Q+BQ0lY8hLq9XqP8L1sChR0wSg2MaqkOawxaggUY8ailqXFz3vGN9VOGBev5nYeD1yfknhk+aoCA8DmFug==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha512-xXDvecy0C0uIK4WMbe6PfUuixh4craEw0jMZEvUyM+zP4h6AsVzTdDEr1xgG+Z6kTpsuRWpu9X6lzNN2Y7r+5g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
